@@ -1,0 +1,157 @@
+-- =============================================
+-- Script básico: Auto-apuntado + Highlight enemigos + Velocidad
+-- Colócalo como LocalScript en StarterPlayer > StarterPlayerScripts
+-- =============================================
+
+local Players = game:GetService("Players")
+local RunService = game:GetService("RunService")
+local UserInputService = game:GetService("UserInputService")
+local TweenService = game:GetService("TweenService")
+
+local LocalPlayer = Players.LocalPlayer
+local Camera = workspace.CurrentCamera
+
+-- ==================== CONFIGURACIÓN ====================
+local AIM_KEY = Enum.UserInputType.MouseButton2  -- Botón derecho del mouse (cámbialo si quieres)
+local AIM_ENABLED = true
+local TEAM_CHECK = true                     -- true = no apunta a compañeros de equipo
+local AIM_PART = "Head"                     -- Parte a la que apunta ("Head", "HumanoidRootPart", etc.)
+local AIM_SMOOTHNESS = 0.15                 -- 0 = instantáneo, 0.3 = más suave (ajusta entre 0.05 y 0.3)
+
+local HIGHLIGHT_COLOR = Color3.fromRGB(255, 0, 0)  -- Rojo para enemigos
+local HIGHLIGHT_TRANSPARENCY = 0.5
+
+local BOOST_SPEED = 50                      -- Velocidad con boost (normal es ~16)
+local NORMAL_SPEED = 16
+-- =======================================================
+
+local currentTarget = nil
+local connection = nil
+local highlights = {}  -- Para gestionar los highlights
+
+-- Función para encontrar el enemigo más cercano
+local function getClosestEnemy()
+    local closest = nil
+    local shortestDistance = math.huge
+    local myChar = LocalPlayer.Character
+    if not myChar or not myChar:FindFirstChild("HumanoidRootPart") then return nil end
+    
+    for _, player in ipairs(Players:GetPlayers()) do
+        if player ~= LocalPlayer and player.Character then
+            local char = player.Character
+            local root = char:FindFirstChild("HumanoidRootPart")
+            local hum = char:FindFirstChild("Humanoid")
+            
+            if root and hum and hum.Health > 0 then
+                -- Team check
+                if TEAM_CHECK and player.Team == LocalPlayer.Team then
+                    continue
+                end
+                
+                local distance = (root.Position - myChar.HumanoidRootPart.Position).Magnitude
+                if distance < shortestDistance then
+                    shortestDistance = distance
+                    closest = char
+                end
+            end
+        end
+    end
+    return closest
+end
+
+-- Crear Highlight para un personaje
+local function createHighlight(character)
+    if not character or highlights[character] then return end
+    
+    local highlight = Instance.new("Highlight")
+    highlight.Name = "EnemyHighlight"
+    highlight.Adornee = character
+    highlight.FillColor = HIGHLIGHT_COLOR
+    highlight.OutlineColor = HIGHLIGHT_COLOR
+    highlight.FillTransparency = HIGHLIGHT_TRANSPARENCY
+    highlight.OutlineTransparency = 0
+    highlight.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop  -- Visible a través de paredes
+    highlight.Parent = character
+    
+    highlights[character] = highlight
+end
+
+-- Actualizar highlights de todos los enemigos
+local function updateHighlights()
+    for _, player in ipairs(Players:GetPlayers()) do
+        if player ~= LocalPlayer and player.Character then
+            local char = player.Character
+            local hum = char:FindFirstChild("Humanoid")
+            
+            if hum and hum.Health > 0 then
+                if not TEAM_CHECK or player.Team ~= LocalPlayer.Team then
+                    createHighlight(char)
+                end
+            end
+        end
+    end
+end
+
+-- Eliminar highlight destruido
+local function cleanupHighlights()
+    for char, hl in pairs(highlights) do
+        if not char or not char.Parent then
+            if hl then hl:Destroy() end
+            highlights[char] = nil
+        end
+    end
+end
+
+-- Auto-apuntado suave
+local function aimAtTarget(target)
+    if not target or not target:FindFirstChild(AIM_PART) then return end
+    
+    local targetPos = target[AIM_PART].Position
+    local currentCFrame = Camera.CFrame
+    
+    -- Crear CFrame mirando al objetivo
+    local targetCFrame = CFrame.lookAt(currentCFrame.Position, targetPos)
+    
+    -- Interpolación suave (Tween-like)
+    Camera.CFrame = currentCFrame:Lerp(targetCFrame, AIM_SMOOTHNESS)
+end
+
+-- Bucle principal (RenderStepped para que sea fluido)
+connection = RunService.RenderStepped:Connect(function()
+    cleanupHighlights()
+    updateHighlights()
+    
+    -- Auto-apuntado
+    if AIM_ENABLED and UserInputService:IsMouseButtonPressed(AIM_KEY) then
+        local target = getClosestEnemy()
+        if target then
+            aimAtTarget(target)
+        end
+    end
+end)
+
+-- Aplicar velocidad aumentada
+local function applySpeedBoost()
+    local char = LocalPlayer.Character
+    if char then
+        local humanoid = char:FindFirstChild("Humanoid")
+        if humanoid then
+            humanoid.WalkSpeed = BOOST_SPEED
+        end
+    end
+end
+
+-- Restaurar velocidad normal al morir o respawnear
+LocalPlayer.CharacterAdded:Connect(function(char)
+    task.wait(1)  -- Esperar a que el Humanoid cargue
+    local hum = char:WaitForChild("Humanoid")
+    hum.WalkSpeed = NORMAL_SPEED  -- Cambia esto si quieres boost permanente
+end)
+
+-- Aplicar boost inicial
+if LocalPlayer.Character then
+    task.wait(1)
+    applySpeedBoost()
+end
+
+print("Script cargado: Auto-apuntado (botón derecho), Highlights rojos y Velocidad aumentada.")
