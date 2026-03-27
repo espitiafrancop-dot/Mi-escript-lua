@@ -1,0 +1,110 @@
+-- =============================================
+-- Simple Aimbot + Highlight (Marcador de enemigo)
+-- Actívalo con la tecla "E"
+-- =============================================
+
+local Players = game:GetService("Players")
+local UserInputService = game:GetService("UserInputService")
+local RunService = game:GetService("RunService")
+local Camera = workspace.CurrentCamera
+
+local LocalPlayer = Players.LocalPlayer
+
+local AIMBOT_ENABLED = false
+local AIM_PART = "Head"          -- Cambia a "HumanoidRootPart" si prefieres el torso
+local SMOOTHNESS = 0.15          -- 0 = instantáneo (muy detectable), 0.2+ = más suave/legit
+local TEAM_CHECK = true          -- Ignorar compañeros de equipo
+
+local currentTarget = nil
+local highlight = nil
+
+-- Crear Highlight para marcar al enemigo
+local function createHighlight(character)
+	if highlight then highlight:Destroy() end
+	
+	highlight = Instance.new("Highlight")
+	highlight.Adornee = character
+	highlight.FillColor = Color3.fromRGB(255, 0, 0)     -- Rojo
+	highlight.OutlineColor = Color3.fromRGB(255, 100, 0)
+	highlight.FillTransparency = 0.5
+	highlight.OutlineTransparency = 0
+	highlight.Parent = character
+end
+
+-- Encontrar el enemigo más cercano en pantalla (FOV básico)
+local function getClosestPlayer()
+	local closest = nil
+	local shortestDistance = math.huge
+	
+	for _, player in ipairs(Players:GetPlayers()) do
+		if player ~= LocalPlayer and player.Character and player.Character:FindFirstChild(AIM_PART) then
+			
+			local humanoid = player.Character:FindFirstChild("Humanoid")
+			if humanoid and humanoid.Health > 0 then
+				
+				-- Team check
+				if TEAM_CHECK and player.Team == LocalPlayer.Team then
+					continue
+				end
+				
+				local targetPart = player.Character[AIM_PART]
+				local screenPoint, onScreen = Camera:WorldToViewportPoint(targetPart.Position)
+				
+				if onScreen then
+					local distance = (Vector2.new(screenPoint.X, screenPoint.Y) - Vector2.new(Camera.ViewportSize.X/2, Camera.ViewportSize.Y/2)).Magnitude
+					
+					if distance < shortestDistance then
+						shortestDistance = distance
+						closest = player
+					end
+				end
+			end
+		end
+	end
+	
+	return closest
+end
+
+-- Bucle principal del aimbot
+RunService.RenderStepped:Connect(function()
+	if not AIMBOT_ENABLED then 
+		if highlight then highlight:Destroy() highlight = nil end
+		currentTarget = nil
+		return 
+	end
+	
+	currentTarget = getClosestPlayer()
+	
+	if currentTarget and currentTarget.Character and currentTarget.Character:FindFirstChild(AIM_PART) then
+		local targetPos = currentTarget.Character[AIM_PART].Position
+		
+		-- Crear o actualizar highlight
+		if not highlight or highlight.Adornee ~= currentTarget.Character then
+			createHighlight(currentTarget.Character)
+		end
+		
+		-- Apuntar suavemente
+		local currentCFrame = Camera.CFrame
+		local targetCFrame = CFrame.new(currentCFrame.Position, targetPos)
+		
+		Camera.CFrame = currentCFrame:Lerp(targetCFrame, SMOOTHNESS)
+	else
+		if highlight then highlight:Destroy() highlight = nil end
+	end
+end)
+
+-- Toggle con tecla E
+UserInputService.InputBegan:Connect(function(input, gameProcessed)
+	if gameProcessed then return end
+	if input.KeyCode == Enum.KeyCode.E then
+		AIMBOT_ENABLED = not AIMBOT_ENABLED
+		print("Aimbot: " .. (AIMBOT_ENABLED and "Activado ✅" or "Desactivado ❌"))
+		
+		if not AIMBOT_ENABLED and highlight then
+			highlight:Destroy()
+			highlight = nil
+		end
+	end
+end)
+
+print("Script de Aimbot cargado. Presiona E para activar/desactivar.")
